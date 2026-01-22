@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  fastapi-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fastapi-ldap-ad
+    ports:
+      - "8000:8000"
+    environment:
+      - LDAP_HOST=${LDAP_HOST:-ldap.example.com}
+      - LDAP_PORT=${LDAP_PORT:-389}
+      - LDAP_USE_SSL=${LDAP_USE_SSL:-false}
+      - LDAP_BIND_DN=${LDAP_BIND_DN:-CN=ServiceAccount,CN=Users,DC=example,DC=com}
+      - LDAP_BIND_PASSWORD=${LDAP_BIND_PASSWORD:-your_secure_password}
+      - LDAP_BASE_DN=${LDAP_BASE_DN:-DC=example,DC=com}
+    volumes:
+      - ./.env:/app/.env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Optional: LDAP test server (for development only)
+  # ldap:
+  #   image: osixia/openldap:latest
+  #   container_name: openldap
+  #   environment:
+  #     LDAP_ORGANISATION: "Example"
+  #     LDAP_DOMAIN: "example.com"
+  #     LDAP_ADMIN_PASSWORD: "admin"
+  #   ports:
+  #     - "389:389"
+  #     - "636:636"
+  #   volumes:
+  #     - ldap_data:/var/lib/ldap
+  #     - ldap_config:/etc/ldap/slapd.d
+
+# volumes:
+#   ldap_data:
+#   ldap_config:

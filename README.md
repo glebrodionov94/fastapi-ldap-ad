@@ -74,7 +74,41 @@ python -m uvicorn app.main:app --reload --port 8000
 
 Откройте Swagger UI: http://localhost:8000/docs
 
-### 4. Запуск тестов
+### 4. Запуск через Docker
+
+#### Сборка образа
+```bash
+docker build -t fastapi-ldap-ad .
+```
+
+#### Запуск контейнера
+```bash
+docker run -p 8000:8000 \
+  -e LDAP_HOST=ldap.example.com \
+  -e LDAP_PORT=389 \
+  -e LDAP_BIND_DN="CN=ServiceAccount,CN=Users,DC=example,DC=com" \
+  -e LDAP_BIND_PASSWORD="your_secure_password" \
+  -e LDAP_BASE_DN="DC=example,DC=com" \
+  fastapi-ldap-ad
+```
+
+#### Использование Docker Compose
+```bash
+# Создать .env файл с переменными окружения
+cp .env.example .env
+# Отредактировать .env с вашими параметрами LDAP
+
+# Запустить приложение
+docker-compose up -d
+
+# Просмотр логов
+docker-compose logs -f
+
+# Остановить приложение
+docker-compose down
+```
+
+### 5. Запуск тестов
 
 ```powershell
 pytest -v
