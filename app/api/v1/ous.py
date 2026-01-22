@@ -1,12 +1,14 @@
-from fastapi import APIRouter, HTTPException, status, Query
-from typing import Optional
+from fastapi import APIRouter, HTTPException, status, Query, Depends
+from typing import Optional, Dict
 from math import ceil
 
 from app.models.ou import OUCreate, OUUpdate, OUResponse
 from app.models.pagination import PaginatedResponse
 from app.services.ldap_service import ldap_service
+from app.services.audit_service import audit_service
+from app.core.security import get_current_user
 
-router = APIRouter(prefix="/ous", tags=["Подразделения"])
+router = APIRouter(prefix="/organizationa", tags=["organizationa"])
 
 
 @router.get("", response_model=PaginatedResponse[OUResponse])
@@ -73,7 +75,9 @@ def get_ou(ou_name: str, parent_dn: Optional[str] = None) -> OUResponse:
 
 
 @router.post("", response_model=OUResponse, status_code=status.HTTP_201_CREATED)
-def create_ou(ou: OUCreate) -> OUResponse:
+def create_ou(
+    ou: OUCreate, current_user: Dict = Depends(get_current_user)
+) -> OUResponse:
     """Create a new Organizational Unit."""
     try:
         ou_dn = f"OU={ou.ou},{ou.parent_dn}"
@@ -91,7 +95,16 @@ def create_ou(ou: OUCreate) -> OUResponse:
         if not success:
             raise HTTPException(status_code=400, detail="Failed to create OU")
 
-        return get_ou(ou.ou, ou.parent_dn)
+        result = get_ou(ou.ou, ou.parent_dn)
+        audit_service.log(
+            actor=current_user.get("username", "anonymous"),
+            action="create_ou",
+            resource_type="ou",
+            resource_id=ou.ou,
+            status="success",
+            details={"parent_dn": ou.parent_dn, "description": ou.description},
+        )
+        return result
     except HTTPException:
         raise
     except Exception as e:
@@ -100,7 +113,10 @@ def create_ou(ou: OUCreate) -> OUResponse:
 
 @router.patch("/{ou_name}", response_model=OUResponse)
 def update_ou(
-    ou_name: str, ou_update: OUUpdate, parent_dn: Optional[str] = None
+    ou_name: str,
+    ou_update: OUUpdate,
+    parent_dn: Optional[str] = None,
+    current_user: Dict = Depends(get_current_user),
 ) -> OUResponse:
     """Обновить атрибуты подразделения (включая перемещение)."""
     try:
@@ -124,7 +140,16 @@ def update_ou(
                     status_code=400, detail="Не удалось обновить подразделение"
                 )
 
-        return get_ou(ou_name, new_parent_dn if new_parent_dn else parent_dn)
+        result = get_ou(ou_name, new_parent_dn if new_parent_dn else parent_dn)
+        audit_service.log(
+            actor=current_user.get("username", "anonymous"),
+            action="update_ou",
+            resource_type="ou",
+            resource_id=ou_name,
+            status="success",
+            details=ou_update.model_dump(exclude_none=True),
+        )
+        return result
     except HTTPException:
         raise
     except Exception as e:
@@ -134,7 +159,11 @@ def update_ou(
 
 
 @router.delete("/{ou_name}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_ou(ou_name: str, parent_dn: Optional[str] = None):
+def delete_ou(
+    ou_name: str,
+    parent_dn: Optional[str] = None,
+    current_user: Dict = Depends(get_current_user),
+):
     """Delete an OU (must be empty)."""
     try:
         current_ou = get_ou(ou_name, parent_dn)
@@ -145,6 +174,13 @@ def delete_ou(ou_name: str, parent_dn: Optional[str] = None):
                 status_code=400, detail="Failed to delete OU (must be empty)"
             )
 
+        audit_service.log(
+            actor=current_user.get("username", "anonymous"),
+            action="delete_ou",
+            resource_type="ou",
+            resource_id=ou_name,
+            status="success",
+        )
         return None
     except HTTPException:
         raise

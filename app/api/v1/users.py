@@ -1,10 +1,12 @@
-from fastapi import APIRouter, HTTPException, status, Query
-from typing import Optional
+from fastapi import APIRouter, HTTPException, status, Query, Depends
+from typing import Optional, Dict
 from math import ceil
 
 from app.models.user import UserCreate, UserUpdate, UserResponse
 from app.models.pagination import PaginatedResponse
 from app.services.ldap_service import ldap_service
+from app.services.audit_service import audit_service
+from app.core.security import get_current_user
 
 router = APIRouter(prefix="/users", tags=["Пользователи"])
 
@@ -97,7 +99,9 @@ def get_user(username: str) -> UserResponse:
 
 
 @router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-def create_user(user: UserCreate) -> UserResponse:
+def create_user(
+    user: UserCreate, current_user: Dict = Depends(get_current_user)
+) -> UserResponse:
     """Create a new user."""
     try:
         user_dn = f"CN={user.cn},{user.ou}"
@@ -135,7 +139,16 @@ def create_user(user: UserCreate) -> UserResponse:
         # Set password
         ldap_service.reset_password(user_dn, user.password)
 
-        return get_user(user.sAMAccountName)
+        result = get_user(user.sAMAccountName)
+        audit_service.log(
+            actor=current_user.get("username", "anonymous"),
+            action="create_user",
+            resource_type="user",
+            resource_id=user.sAMAccountName,
+            status="success",
+            details={"ou": user.ou, "cn": user.cn},
+        )
+        return result
     except HTTPException:
         raise
     except Exception as e:
@@ -143,7 +156,11 @@ def create_user(user: UserCreate) -> UserResponse:
 
 
 @router.patch("/{username}", response_model=UserResponse)
-def update_user(username: str, user_update: UserUpdate) -> UserResponse:
+def update_user(
+    username: str,
+    user_update: UserUpdate,
+    current_user: Dict = Depends(get_current_user),
+) -> UserResponse:
     """Обновить атрибуты пользователя (включая пароль и перемещение)."""
     try:
         current_user = get_user(username)
@@ -175,7 +192,16 @@ def update_user(username: str, user_update: UserUpdate) -> UserResponse:
                     status_code=400, detail="Не удалось обновить пользователя"
                 )
 
-        return get_user(username)
+        result = get_user(username)
+        audit_service.log(
+            actor=current_user.get("username", "anonymous"),
+            action="update_user",
+            resource_type="user",
+            resource_id=username,
+            status="success",
+            details=user_update.model_dump(exclude_none=True),
+        )
+        return result
     except HTTPException:
         raise
     except Exception as e:
@@ -185,7 +211,7 @@ def update_user(username: str, user_update: UserUpdate) -> UserResponse:
 
 
 @router.delete("/{username}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_user(username: str):
+def delete_user(username: str, current_user: Dict = Depends(get_current_user)):
     """Delete a user."""
     try:
         current_user = get_user(username)
@@ -194,6 +220,13 @@ def delete_user(username: str):
         if not success:
             raise HTTPException(status_code=400, detail="Failed to delete user")
 
+        audit_service.log(
+            actor=current_user.get("username", "anonymous"),
+            action="delete_user",
+            resource_type="user",
+            resource_id=username,
+            status="success",
+        )
         return None
     except HTTPException:
         raise
@@ -206,7 +239,9 @@ def delete_user(username: str):
     response_model=UserResponse,
     status_code=status.HTTP_200_OK,
 )
-def add_user_to_group(username: str, group_name: str) -> UserResponse:
+def add_user_to_group(
+    username: str, group_name: str, current_user: Dict = Depends(get_current_user)
+) -> UserResponse:
     """Добавить пользователя в группу."""
     try:
         user = get_user(username)
@@ -227,7 +262,16 @@ def add_user_to_group(username: str, group_name: str) -> UserResponse:
         if not success:
             raise HTTPException(status_code=400, detail="Failed to add user to group")
 
-        return get_user(username)
+        result = get_user(username)
+        audit_service.log(
+            actor=current_user.get("username", "anonymous"),
+            action="add_user_to_group",
+            resource_type="user",
+            resource_id=username,
+            status="success",
+            details={"group": group_name},
+        )
+        return result
     except HTTPException:
         raise
     except Exception as e:
@@ -239,7 +283,9 @@ def add_user_to_group(username: str, group_name: str) -> UserResponse:
 @router.delete(
     "/{username}/groups/{group_name}", status_code=status.HTTP_204_NO_CONTENT
 )
-def remove_user_from_group(username: str, group_name: str):
+def remove_user_from_group(
+    username: str, group_name: str, current_user: Dict = Depends(get_current_user)
+):
     """Удалить пользователя из группы."""
     try:
         user = get_user(username)
@@ -262,6 +308,14 @@ def remove_user_from_group(username: str, group_name: str):
                 status_code=400, detail="Failed to remove user from group"
             )
 
+        audit_service.log(
+            actor=current_user.get("username", "anonymous"),
+            action="remove_user_from_group",
+            resource_type="user",
+            resource_id=username,
+            status="success",
+            details={"group": group_name},
+        )
         return None
     except HTTPException:
         raise

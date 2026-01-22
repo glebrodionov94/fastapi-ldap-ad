@@ -1,10 +1,12 @@
-from fastapi import APIRouter, HTTPException, status, Query
-from typing import Optional
+from fastapi import APIRouter, HTTPException, status, Query, Depends
+from typing import Optional, Dict
 from math import ceil
 
 from app.models.group import GroupCreate, GroupUpdate, GroupResponse
 from app.models.pagination import PaginatedResponse
 from app.services.ldap_service import ldap_service
+from app.services.audit_service import audit_service
+from app.core.security import get_current_user
 
 router = APIRouter(prefix="/groups", tags=["Группы"])
 
@@ -72,7 +74,9 @@ def get_group(group_name: str) -> GroupResponse:
 
 
 @router.post("", response_model=GroupResponse, status_code=status.HTTP_201_CREATED)
-def create_group(group: GroupCreate) -> GroupResponse:
+def create_group(
+    group: GroupCreate, current_user: Dict = Depends(get_current_user)
+) -> GroupResponse:
     """Create a new group."""
     try:
         group_dn = f"CN={group.cn},{group.ou}"
@@ -94,7 +98,16 @@ def create_group(group: GroupCreate) -> GroupResponse:
         if not success:
             raise HTTPException(status_code=400, detail="Failed to create group")
 
-        return get_group(group.cn)
+        result = get_group(group.cn)
+        audit_service.log(
+            actor=current_user.get("username", "anonymous"),
+            action="create_group",
+            resource_type="group",
+            resource_id=group.cn,
+            status="success",
+            details={"ou": group.ou, "description": group.description},
+        )
+        return result
     except HTTPException:
         raise
     except Exception as e:
@@ -102,7 +115,11 @@ def create_group(group: GroupCreate) -> GroupResponse:
 
 
 @router.patch("/{group_name}", response_model=GroupResponse)
-def update_group(group_name: str, group_update: GroupUpdate) -> GroupResponse:
+def update_group(
+    group_name: str,
+    group_update: GroupUpdate,
+    current_user: Dict = Depends(get_current_user),
+) -> GroupResponse:
     """Обновить атрибуты группы (включая перемещение)."""
     try:
         current_group = get_group(group_name)
@@ -125,7 +142,16 @@ def update_group(group_name: str, group_update: GroupUpdate) -> GroupResponse:
                     status_code=400, detail="Не удалось обновить группу"
                 )
 
-        return get_group(group_name)
+        result = get_group(group_name)
+        audit_service.log(
+            actor=current_user.get("username", "anonymous"),
+            action="update_group",
+            resource_type="group",
+            resource_id=group_name,
+            status="success",
+            details=group_update.model_dump(exclude_none=True),
+        )
+        return result
     except HTTPException:
         raise
     except Exception as e:
@@ -135,7 +161,7 @@ def update_group(group_name: str, group_update: GroupUpdate) -> GroupResponse:
 
 
 @router.delete("/{group_name}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_group(group_name: str):
+def delete_group(group_name: str, current_user: Dict = Depends(get_current_user)):
     """Delete a group."""
     try:
         current_group = get_group(group_name)
@@ -144,6 +170,13 @@ def delete_group(group_name: str):
         if not success:
             raise HTTPException(status_code=400, detail="Failed to delete group")
 
+        audit_service.log(
+            actor=current_user.get("username", "anonymous"),
+            action="delete_group",
+            resource_type="group",
+            resource_id=group_name,
+            status="success",
+        )
         return None
     except HTTPException:
         raise
@@ -156,7 +189,9 @@ def delete_group(group_name: str):
     response_model=GroupResponse,
     status_code=status.HTTP_200_OK,
 )
-def add_member_to_group_route(group_name: str, username: str) -> GroupResponse:
+def add_member_to_group_route(
+    group_name: str, username: str, current_user: Dict = Depends(get_current_user)
+) -> GroupResponse:
     """Добавить пользователя в группу через роут группы."""
     try:
         from app.api.v1.users import get_user as get_user_by_username
@@ -169,7 +204,16 @@ def add_member_to_group_route(group_name: str, username: str) -> GroupResponse:
         if not success:
             raise HTTPException(status_code=400, detail="Failed to add member to group")
 
-        return get_group(group_name)
+        result = get_group(group_name)
+        audit_service.log(
+            actor=current_user.get("username", "anonymous"),
+            action="add_member_to_group",
+            resource_type="group",
+            resource_id=group_name,
+            status="success",
+            details={"username": username},
+        )
+        return result
     except HTTPException:
         raise
     except Exception as e:
@@ -181,7 +225,9 @@ def add_member_to_group_route(group_name: str, username: str) -> GroupResponse:
 @router.delete(
     "/{group_name}/members/{username}", status_code=status.HTTP_204_NO_CONTENT
 )
-def remove_member_from_group_route(group_name: str, username: str):
+def remove_member_from_group_route(
+    group_name: str, username: str, current_user: Dict = Depends(get_current_user)
+):
     """Удалить пользователя из группы через роут группы."""
     try:
         from app.api.v1.users import get_user as get_user_by_username
@@ -196,6 +242,14 @@ def remove_member_from_group_route(group_name: str, username: str):
                 status_code=400, detail="Failed to remove member from group"
             )
 
+        audit_service.log(
+            actor=current_user.get("username", "anonymous"),
+            action="remove_member_from_group",
+            resource_type="group",
+            resource_id=group_name,
+            status="success",
+            details={"username": username},
+        )
         return None
     except HTTPException:
         raise

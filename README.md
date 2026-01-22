@@ -13,14 +13,18 @@
 
 ### 👪 Управление группами
 - ✅ CRUD операции для групп
-- ✅ Добавление/удаление участников через PATCH
-- ✅ Перемещение групп между OU через PATCH
+- ✅ Добавление/удаление участников
+- ✅ Перемещение групп между OU
 - ✅ Поиск групп
 
 ### 🗂️ Управление подразделениями (OU)
 - ✅ CRUD операции
-- ✅ Перемещение OU через PATCH
+- ✅ Перемещение OU
 - ✅ Обновление атрибутов
+
+### 📜 Аудит
+- ✅ Файловое логирование операций изменения в `logs/audit.jsonl`
+- ✅ Без отдельного API — логи доступны напрямую в файле
 
 ## Структура проекта
 
@@ -53,15 +57,24 @@ pip install -r requirements.txt
 
 ### 2. Конфигурация LDAP
 
-Скопировать [.env.example](.env.example) в `.env` и настроить подключение к LDAP/AD:
+Скопировать [.env.example](.env.example) в `.env` и настроить подключение к LDAP/AD и JWT:
 
 ```env
+# LDAP Configuration
 LDAP_SERVER=your-dc.example.com
 LDAP_PORT=389
 LDAP_USE_SSL=false
 LDAP_BIND_DN=CN=ServiceAccount,CN=Users,DC=example,DC=com
 LDAP_BIND_PASSWORD=your_secure_password
 LDAP_BASE_DN=DC=example,DC=com
+
+# JWT Configuration
+JWT_SECRET_KEY=your-secret-key-change-this-in-production
+JWT_ALGORITHM=HS256
+JWT_EXPIRATION_HOURS=24
+
+# Audit
+AUDIT_LOG_PATH=logs/audit.jsonl
 ```
 
 **Важно:** Для сброса паролей требуется SSL/TLS (порт 636) и учётная запись с соответствующими правами.
@@ -141,204 +154,12 @@ pytest -v
 - `PATCH /ous/{ou_name}` - обновить подразделение или переместить его
 - `DELETE /ous/{ou_name}` - удалить подразделение (должно быть пустым)
 
+### Аутентификация (`/auth`)
+- `POST /auth/login` - получить JWT токен (требуется username и password)
+- `POST /auth/refresh` - обновить JWT токен
+
 ### Система
 - `GET /health` - проверка здоровья сервиса
-
-## Примеры использования
-
-### Создать пользователя
-
-```bash
-curl -X POST "http://localhost:8000/users" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "cn": "Jane Smith",
-    "sAMAccountName": "jsmith",
-    "givenName": "Jane",
-    "sn": "Smith",
-    "mail": "jsmith@example.com",
-    "password": "SecurePass123!",
-    "ou": "OU=IT,DC=example,DC=com"
-  }'
-```
-
-### Обновить пользователя и сбросить пароль (в одном запросе)
-
-```bash
-curl -X PATCH "http://localhost:8000/users/jsmith" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "mail": "jane.smith@example.com",
-    "title": "Senior Developer",
-    "password": "NewSecurePass456!"
-  }'
-```
-
-### Переместить пользователя в другое подразделение
-
-```bash
-curl -X PATCH "http://localhost:8000/users/jsmith" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "parent_dn": "OU=Developers,OU=IT,DC=example,DC=com"
-  }'
-```
-
-### Добавить пользователя в группу (через роут пользователя)
-
-```bash
-curl -X POST "http://localhost:8000/users/jsmith/groups/DevTeam" \
-  -H "Content-Type: application/json"
-```
-
-### Удалить пользователя из группы (через роут пользователя)
-
-```bash
-curl -X DELETE "http://localhost:8000/users/jsmith/groups/DevTeam"
-```
-
-### Получить информацию о пользователе с группами
-
-```bash
-curl "http://localhost:8000/users/jsmith"
-```
-
-Ответ включит поле `memberOf` со списком групп пользователя:
-```json
-{
-  "dn": "CN=Jane Smith,OU=Users,DC=example,DC=com",
-  "sAMAccountName": "jsmith",
-  "cn": "Jane Smith",
-  "mail": "jane.smith@example.com",
-  "memberOf": [
-    "CN=DevTeam,OU=Groups,DC=example,DC=com",
-    "CN=IT Staff,OU=Groups,DC=example,DC=com"
-  ]
-}
-```
-
-### Создать группу
-
-```bash
-curl -X POST "http://localhost:8000/groups" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "cn": "DevTeam",
-    "description": "Development team group",
-    "ou": "OU=IT,DC=example,DC=com"
-  }'
-```
-
-### Добавить пользователя в группу (через роут группы)
-
-```bash
-curl -X POST "http://localhost:8000/groups/DevTeam/members/jsmith" \
-  -H "Content-Type: application/json"
-```
-
-### Удалить пользователя из группы (через роут группы)
-
-```bash
-curl -X DELETE "http://localhost:8000/groups/DevTeam/members/jsmith"
-```
-
-### Переместить группу в другое подразделение
-
-```bash
-curl -X PATCH "http://localhost:8000/groups/DevTeam" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "parent_dn": "OU=NewOU,DC=example,DC=com"
-  }'
-```
-
-### Добавить и удалить участников группы через PATCH (старый способ, не рекомендуется)
-
-```bash
-curl -X PATCH "http://localhost:8000/groups/DevTeam" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "add_members": [
-      "CN=Jane Smith,OU=Developers,OU=IT,DC=example,DC=com",
-      "CN=John Doe,OU=IT,DC=example,DC=com"
-    ],
-    "remove_members": [
-      "CN=Old User,OU=IT,DC=example,DC=com"
-    ]
-  }'
-```
-
-### Создать подразделение
-
-```bash
-curl -X POST "http://localhost:8000/ous" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "ou": "Developers",
-    "description": "Development team",
-    "parent_dn": "OU=IT,DC=example,DC=com"
-  }'
-```
-
-### Переместить подразделение
-
-```bash
-curl -X PATCH "http://localhost:8000/ous/Developers" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "parent_dn": "OU=Engineering,DC=example,DC=com"
-  }'
-```
-
-### Получить список пользователей с пагинацией
-
-```bash
-# Первая страница (10 элементов по умолчанию)
-curl -X GET "http://localhost:8000/users?skip=0&limit=10"
-
-# Вторая страница (элементы 10-19)
-curl -X GET "http://localhost:8000/users?skip=10&limit=10"
-
-# С поиском и пагинацией
-curl -X GET "http://localhost:8000/users?search=john&skip=0&limit=10"
-
-# Пользовательский размер страницы (максимум 100)
-curl -X GET "http://localhost:8000/users?skip=0&limit=50"
-```
-
-**Ответ с пагинацией:**
-
-```json
-{
-  "items": [
-    {
-      "dn": "CN=John Doe,OU=Users,DC=example,DC=com",
-      "sAMAccountName": "jdoe",
-      "cn": "John Doe",
-      "givenName": "John",
-      "sn": "Doe",
-      "mail": "jdoe@example.com",
-      "title": "Software Engineer",
-      "department": "IT",
-      "telephoneNumber": "+1-555-0100",
-      "description": "Senior Developer"
-    }
-  ],
-  "total": 245,
-  "skip": 0,
-  "limit": 10,
-  "pages": 25
-}
-```
-
-**Параметры пагинации:**
-- `skip` (по умолчанию `0`) - количество элементов, которые нужно пропустить
-- `limit` (по умолчанию `10`, максимум `100`) - количество элементов на странице
-- `total` - общее количество элементов в базе
-- `pages` - общее количество страниц
-- `items` - массив элементов текущей страницы
-
-Аналогичная пагинация доступна для endpoints `/groups` и `/ous`.
 
 ## Технологии
 
@@ -380,6 +201,7 @@ LDAP_PORT=636
 | `LDAP_BIND_DN` | DN служебной учётной записи | `CN=Service,DC=example,DC=com` |
 | `LDAP_BIND_PASSWORD` | Пароль | `your_password` |
 | `LDAP_BASE_DN` | Base DN для поиска | `DC=example,DC=com` |
+| `AUDIT_LOG_PATH` | Путь к файлу аудита | `logs/audit.jsonl` |
 
 ## Лицензия
 
@@ -387,9 +209,9 @@ MIT
 
 ## Дальнейшее развитие
 
-- [ ] JWT аутентификация для API
+- [x] JWT аутентификация для API
+- [x] Аудит логирование операций
 - [ ] Batch операции (массовое создание/изменение)
-- [ ] Аудит логирование операций
 - [ ] Docker контейнеризация
 - [ ] CI/CD pipeline
 - [ ] Расширенные фильтры поиска
