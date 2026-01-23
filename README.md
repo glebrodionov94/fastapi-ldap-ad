@@ -22,6 +22,11 @@
 - ✅ Перемещение OU
 - ✅ Обновление атрибутов
 
+### 📦 Контейнеры (CN)
+- ✅ CRUD операции для контейнеров (CN=)
+- ✅ Перемещение между родителями
+- ✅ Поиск по CN
+
 ### 📜 Аудит
 - ✅ Файловое логирование операций изменения в `logs/audit.jsonl`
 - ✅ Без отдельного API — логи доступны напрямую в файле
@@ -32,6 +37,7 @@
 - [app/api/v1/users.py](app/api/v1/users.py): API для управления пользователями
 - [app/api/v1/groups.py](app/api/v1/groups.py): API для управления группами
 - [app/api/v1/ous.py](app/api/v1/ous.py): API для управления OU
+- [app/api/v1/containers.py](app/api/v1/containers.py): API для управления контейнерами (CN)
 - [app/services/ldap_service.py](app/services/ldap_service.py): сервисный слой для LDAP операций
 - [app/core/config.py](app/core/config.py): конфигурация (LDAP, app settings)
 - [app/core/logging.py](app/core/logging.py): настройка логирования
@@ -97,11 +103,14 @@ docker build -t fastapi-ldap-ad .
 #### Запуск контейнера
 ```bash
 docker run -p 8000:8000 \
-  -e LDAP_HOST=ldap.example.com \
+  -e LDAP_SERVER=ldap.example.com \
   -e LDAP_PORT=389 \
+  -e LDAP_USE_SSL=false \
   -e LDAP_BIND_DN="CN=ServiceAccount,CN=Users,DC=example,DC=com" \
   -e LDAP_BIND_PASSWORD="your_secure_password" \
   -e LDAP_BASE_DN="DC=example,DC=com" \
+  -e LOCAL_AUTH_USERNAME=admin \
+  -e LOCAL_AUTH_PASSWORD=admin123 \
   fastapi-ldap-ad
 ```
 
@@ -155,8 +164,15 @@ pytest -v
 - `DELETE /ous/{ou_name}` - удалить подразделение (должно быть пустым)
 
 ### Аутентификация (`/auth`)
-- `POST /auth/login` - получить JWT токен (требуется username и password)
+- `POST /auth/login` - получить JWT токен (локальная проверка `LOCAL_AUTH_USERNAME` / `LOCAL_AUTH_PASSWORD`)
 - `POST /auth/refresh` - обновить JWT токен
+
+### Контейнеры (`/containers`)
+- `GET /containers` - список контейнеров с пагинацией (query params: `search`, `skip`, `limit`)
+- `GET /containers/{cn}` - получить контейнер по CN (query param: `parent_dn`)
+- `POST /containers` - создать контейнер
+- `PATCH /containers/{cn}` - обновить или переместить контейнер (поле `parent_dn`)
+- `DELETE /containers/{cn}` - удалить контейнер (должен быть пустым)
 
 ### Система
 - `GET /health` - проверка здоровья сервиса
@@ -202,6 +218,8 @@ LDAP_PORT=636
 | `LDAP_BIND_PASSWORD` | Пароль | `your_password` |
 | `LDAP_BASE_DN` | Base DN для поиска | `DC=example,DC=com` |
 | `AUDIT_LOG_PATH` | Путь к файлу аудита | `logs/audit.jsonl` |
+| `LOCAL_AUTH_USERNAME` | Локальный пользователь для логина | `admin` |
+| `LOCAL_AUTH_PASSWORD` | Пароль локального пользователя | `admin123` |
 
 ## Лицензия
 
