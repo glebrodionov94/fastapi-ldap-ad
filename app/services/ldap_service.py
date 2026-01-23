@@ -33,7 +33,7 @@ class LDAPService:
 
     def _check_configured(self):
         """Check if LDAP is properly configured."""
-        if not self.server:
+        if self.server is None:
             raise RuntimeError(
                 "LDAP service not configured. Please set LDAP_* environment variables."
             )
@@ -41,8 +41,9 @@ class LDAPService:
     def _get_connection(self) -> Connection:
         """Create and bind LDAP connection."""
         self._check_configured()
+        # At this point, self.server is guaranteed not to be None
         conn = Connection(
-            self.server,
+            self.server,  # type: ignore
             user=self.bind_dn,
             password=self.bind_password,
             auto_bind=True,
@@ -58,6 +59,8 @@ class LDAPService:
         """Search for entries in LDAP."""
         if search_base is None:
             search_base = self.base_dn
+        if search_base is None:
+            raise ValueError("LDAP search_base is not configured.")
         if attributes is None:
             attributes = ["*"]
 
@@ -74,7 +77,7 @@ class LDAPService:
             conn.unbind()
             return results
         except LDAPException as e:
-            logger.error(f"LDAP search error: {e}")
+            logger.error("LDAP search error: %s", e)
             raise
 
     def add_entry(
@@ -86,10 +89,10 @@ class LDAPService:
             success = conn.add(dn, object_class, attributes)
             conn.unbind()
             if not success:
-                logger.error(f"Failed to add entry: {conn.result}")
+                logger.error("Failed to add entry: %s", conn.result)
             return success
         except LDAPException as e:
-            logger.error(f"LDAP add error: {e}")
+            logger.error("LDAP add error: %s", e)
             raise
 
     def modify_entry(self, dn: str, changes: dict[str, Any]) -> bool:
@@ -102,10 +105,10 @@ class LDAPService:
             success = conn.modify(dn, modify_dict)
             conn.unbind()
             if not success:
-                logger.error(f"Failed to modify entry: {conn.result}")
+                logger.error("Failed to modify entry: %s", conn.result)
             return success
         except LDAPException as e:
-            logger.error(f"LDAP modify error: {e}")
+            logger.error("LDAP modify error: %s", e)
             raise
 
     def delete_entry(self, dn: str) -> bool:
@@ -115,10 +118,10 @@ class LDAPService:
             success = conn.delete(dn)
             conn.unbind()
             if not success:
-                logger.error(f"Failed to delete entry: {conn.result}")
+                logger.error("Failed to delete entry: %s", conn.result)
             return success
         except LDAPException as e:
-            logger.error(f"LDAP delete error: {e}")
+            logger.error("LDAP delete error: %s", e)
             raise
 
     def move_entry(self, dn: str, new_parent_dn: str) -> bool:
@@ -130,10 +133,10 @@ class LDAPService:
             success = conn.modify_dn(dn, rdn, new_superior=new_parent_dn)
             conn.unbind()
             if not success:
-                logger.error(f"Failed to move entry: {conn.result}")
+                logger.error("Failed to move entry: %s", conn.result)
             return success
         except LDAPException as e:
-            logger.error(f"LDAP move error: {e}")
+            logger.error("LDAP move error: %s", e)
             raise
 
     def add_member_to_group(self, group_dn: str, member_dn: str) -> bool:
@@ -143,10 +146,10 @@ class LDAPService:
             success = conn.modify(group_dn, {"member": [(MODIFY_ADD, [member_dn])]})
             conn.unbind()
             if not success:
-                logger.error(f"Failed to add member to group: {conn.result}")
+                logger.error("Failed to add member to group: %s", conn.result)
             return success
         except LDAPException as e:
-            logger.error(f"LDAP add member error: {e}")
+            logger.error("LDAP add member error: %s", e)
             raise
 
     def remove_member_from_group(self, group_dn: str, member_dn: str) -> bool:
@@ -156,10 +159,10 @@ class LDAPService:
             success = conn.modify(group_dn, {"member": [(MODIFY_DELETE, [member_dn])]})
             conn.unbind()
             if not success:
-                logger.error(f"Failed to remove member from group: {conn.result}")
+                logger.error("Failed to remove member from group: %s", conn.result)
             return success
         except LDAPException as e:
-            logger.error(f"LDAP remove member error: {e}")
+            logger.error("LDAP remove member error: %s", e)
             raise
 
     def reset_password(self, user_dn: str, new_password: str) -> bool:
@@ -173,10 +176,10 @@ class LDAPService:
             )
             conn.unbind()
             if not success:
-                logger.error(f"Failed to reset password: {conn.result}")
+                logger.error("Failed to reset password: %s", conn.result)
             return success
         except LDAPException as e:
-            logger.error(f"LDAP password reset error: {e}")
+            logger.error("LDAP password reset error: %s", e)
             raise
 
     def authenticate(self, username: str, password: str) -> Optional[dict[str, Any]]:
@@ -195,7 +198,7 @@ class LDAPService:
             )
 
             if not results:
-                logger.warning(f"User {username} not found in LDAP")
+                logger.warning("User %s not found in LDAP", username)
                 return None
 
             user_entry = results[0]
@@ -203,8 +206,9 @@ class LDAPService:
 
             # Try to bind with user credentials
             try:
+                # At this point, self.server is guaranteed not to be None
                 test_conn = Connection(
-                    self.server,
+                    self.server,  # type: ignore
                     user=user_dn,
                     password=password,
                     auto_bind=True,
@@ -219,11 +223,11 @@ class LDAPService:
                     "dn": user_dn,
                 }
             except LDAPException as e:
-                logger.warning(f"Authentication failed for user {username}: {e}")
+                logger.warning("Authentication failed for user %s: %s", username, e)
                 return None
 
-        except Exception as e:
-            logger.error(f"Authentication error: {e}")
+        except LDAPException as e:
+            logger.error("Authentication error: %s", e)
             return None
 
 

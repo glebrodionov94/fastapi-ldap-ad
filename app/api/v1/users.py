@@ -62,7 +62,7 @@ def list_users(
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Ошибка получения пользователей: {str(e)}"
-        )
+        ) from e
 
 
 @router.get("/{username}", response_model=UserResponse)
@@ -78,24 +78,26 @@ def get_user(username: str) -> UserResponse:
             raise HTTPException(status_code=404, detail=f"User '{username}' not found")
 
         entry = results[0]
-        return {
-            "dn": entry.get("distinguishedName", [""])[0],
-            "cn": entry.get("cn", [""])[0],
-            "sAMAccountName": entry.get("sAMAccountName", [""])[0],
-            "givenName": entry.get("givenName", [None])[0],
-            "sn": entry.get("sn", [None])[0],
-            "mail": entry.get("mail", [None])[0],
-            "telephoneNumber": entry.get("telephoneNumber", [None])[0],
-            "title": entry.get("title", [None])[0],
-            "department": entry.get("department", [None])[0],
-            "description": entry.get("description", [None])[0],
-            "userAccountControl": entry.get("userAccountControl", [None])[0],
-            "memberOf": entry.get("memberOf", []),
-        }
+        return UserResponse(
+            dn=entry.get("distinguishedName", [""])[0],
+            cn=entry.get("cn", [""])[0],
+            sAMAccountName=entry.get("sAMAccountName", [""])[0],
+            givenName=entry.get("givenName", [None])[0],
+            sn=entry.get("sn", [None])[0],
+            mail=entry.get("mail", [None])[0],
+            telephoneNumber=entry.get("telephoneNumber", [None])[0],
+            title=entry.get("title", [None])[0],
+            department=entry.get("department", [None])[0],
+            description=entry.get("description", [None])[0],
+            userAccountControl=entry.get("userAccountControl", [None])[0],
+            memberOf=entry.get("memberOf", []),
+        )
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get user: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get user: {str(e)}"
+        ) from e
 
 
 @router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -108,7 +110,7 @@ def create_user(
 
         attributes = {
             "sAMAccountName": user.sAMAccountName,
-            "userPrincipalName": f"{user.sAMAccountName}@{ldap_service.base_dn.replace('DC=', '').replace(',', '.')}",
+            "userPrincipalName": f"{user.sAMAccountName}@{(ldap_service.base_dn or '').replace('DC=', '').replace(',', '.')}",
             "userAccountControl": 512,  # Normal account
         }
 
@@ -152,7 +154,7 @@ def create_user(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create user: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to create user: {str(e)}") from e
 
 
 @router.patch("/{username}", response_model=UserResponse)
@@ -163,13 +165,13 @@ def update_user(
 ) -> UserResponse:
     """Обновить атрибуты пользователя (включая пароль и перемещение)."""
     try:
-        current_user = get_user(username)
+        existing_user = get_user(username)
         user_data = user_update.model_dump(exclude_none=True)
 
         # Handle password reset
         new_password = user_data.pop("password", None)
         if new_password:
-            success = ldap_service.reset_password(current_user["dn"], new_password)
+            success = ldap_service.reset_password(existing_user.dn, new_password)
             if not success:
                 raise HTTPException(
                     status_code=400, detail="Не удалось сбросить пароль"
@@ -178,7 +180,7 @@ def update_user(
         # Handle move operation
         new_parent_dn = user_data.pop("parent_dn", None)
         if new_parent_dn:
-            success = ldap_service.move_entry(current_user["dn"], new_parent_dn)
+            success = ldap_service.move_entry(existing_user.dn, new_parent_dn)
             if not success:
                 raise HTTPException(
                     status_code=400, detail="Не удалось переместить пользователя"
@@ -186,7 +188,7 @@ def update_user(
 
         # Update other attributes
         if user_data:
-            success = ldap_service.modify_entry(current_user["dn"], user_data)
+            success = ldap_service.modify_entry(existing_user.dn, user_data)
             if not success:
                 raise HTTPException(
                     status_code=400, detail="Не удалось обновить пользователя"
@@ -207,15 +209,15 @@ def update_user(
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Ошибка обновления пользователя: {str(e)}"
-        )
+        ) from e
 
 
 @router.delete("/{username}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_user(username: str, current_user: Dict = Depends(get_current_user)):
     """Delete a user."""
     try:
-        current_user = get_user(username)
-        success = ldap_service.delete_entry(current_user["dn"])
+        current_user_obj = get_user(username)
+        success = ldap_service.delete_entry(current_user_obj.dn)
 
         if not success:
             raise HTTPException(status_code=400, detail="Failed to delete user")
@@ -231,7 +233,7 @@ def delete_user(username: str, current_user: Dict = Depends(get_current_user)):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to delete user: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete user: {str(e)}") from e
 
 
 @router.post(
@@ -258,7 +260,7 @@ def add_user_to_group(
         group_dn = group_results[0].get("distinguishedName", [""])[0]
 
         # Add user to group
-        success = ldap_service.add_member_to_group(group_dn, user["dn"])
+        success = ldap_service.add_member_to_group(group_dn, user.dn)
         if not success:
             raise HTTPException(status_code=400, detail="Failed to add user to group")
 
@@ -277,7 +279,7 @@ def add_user_to_group(
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to add user to group: {str(e)}"
-        )
+        ) from e
 
 
 @router.delete(
@@ -302,7 +304,7 @@ def remove_user_from_group(
         group_dn = group_results[0].get("distinguishedName", [""])[0]
 
         # Remove user from group
-        success = ldap_service.remove_member_from_group(group_dn, user["dn"])
+        success = ldap_service.remove_member_from_group(group_dn, user.dn)
         if not success:
             raise HTTPException(
                 status_code=400, detail="Failed to remove user from group"
@@ -322,4 +324,4 @@ def remove_user_from_group(
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to remove user from group: {str(e)}"
-        )
+        ) from e

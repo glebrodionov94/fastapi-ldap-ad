@@ -46,7 +46,7 @@ def list_ous(
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Ошибка получения подразделений: {str(e)}"
-        )
+        ) from e
 
 
 @router.get("/{ou_name}", response_model=OUResponse)
@@ -63,15 +63,17 @@ def get_ou(ou_name: str, parent_dn: Optional[str] = None) -> OUResponse:
             raise HTTPException(status_code=404, detail=f"OU '{ou_name}' not found")
 
         entry = results[0]
-        return {
-            "dn": entry.get("distinguishedName", [""])[0],
-            "ou": entry.get("ou", [""])[0],
-            "description": entry.get("description", [None])[0],
-        }
+        return OUResponse(
+            dn=entry.get("distinguishedName", [""])[0],
+            ou=entry.get("ou", [""])[0],
+            description=entry.get("description", [None])[0],
+        )
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get OU: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get OU: {str(e)}"
+        ) from e
 
 
 @router.post("", response_model=OUResponse, status_code=status.HTTP_201_CREATED)
@@ -108,7 +110,9 @@ def create_ou(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create OU: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to create OU: {str(e)}"
+        ) from e
 
 
 @router.patch("/{ou_name}", response_model=OUResponse)
@@ -126,7 +130,7 @@ def update_ou(
         # Handle move operation
         new_parent_dn = ou_data.pop("parent_dn", None)
         if new_parent_dn:
-            success = ldap_service.move_entry(current_ou["dn"], new_parent_dn)
+            success = ldap_service.move_entry(current_ou.dn, new_parent_dn)
             if not success:
                 raise HTTPException(
                     status_code=400, detail="Не удалось переместить подразделение"
@@ -134,7 +138,7 @@ def update_ou(
 
         # Update other attributes
         if ou_data:
-            success = ldap_service.modify_entry(current_ou["dn"], ou_data)
+            success = ldap_service.modify_entry(current_ou.dn, ou_data)
             if not success:
                 raise HTTPException(
                     status_code=400, detail="Не удалось обновить подразделение"
@@ -155,7 +159,7 @@ def update_ou(
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Ошибка обновления подразделения: {str(e)}"
-        )
+        ) from e
 
 
 @router.delete("/{ou_name}", status_code=status.HTTP_204_NO_CONTENT)
@@ -167,7 +171,7 @@ def delete_ou(
     """Delete an OU (must be empty)."""
     try:
         current_ou = get_ou(ou_name, parent_dn)
-        success = ldap_service.delete_entry(current_ou["dn"])
+        success = ldap_service.delete_entry(current_ou.dn)
 
         if not success:
             raise HTTPException(
@@ -185,4 +189,4 @@ def delete_ou(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to delete OU: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete OU: {str(e)}") from e

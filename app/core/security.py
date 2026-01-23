@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from typing import Dict, Optional
-import jwt
+import jwt # type: ignore
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer
 
@@ -35,18 +35,18 @@ class JWTHandler:
                 token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm]
             )
             return payload
-        except jwt.ExpiredSignatureError:
+        except jwt.ExpiredSignatureError as exc:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Token expired",
                 headers={"WWW-Authenticate": "Bearer"},
-            )
-        except jwt.InvalidTokenError:
+            ) from exc
+        except jwt.InvalidTokenError as exc:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token",
                 headers={"WWW-Authenticate": "Bearer"},
-            )
+            ) from exc
 
 
 security = HTTPBearer()
