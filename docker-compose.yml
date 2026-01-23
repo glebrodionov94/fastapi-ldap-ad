@@ -9,14 +9,19 @@ services:
     ports:
       - "8000:8000"
     environment:
+      - APP_NAME=${APP_NAME:-fastapi-ldap-ad}
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - DEBUG=${DEBUG:-false}
       - LDAP_SERVER=${LDAP_SERVER:-ldap.example.com}
       - LDAP_PORT=${LDAP_PORT:-389}
       - LDAP_USE_SSL=${LDAP_USE_SSL:-false}
       - LDAP_BIND_DN=${LDAP_BIND_DN:-CN=ServiceAccount,CN=Users,DC=example,DC=com}
       - LDAP_BIND_PASSWORD=${LDAP_BIND_PASSWORD:-your_secure_password}
       - LDAP_BASE_DN=${LDAP_BASE_DN:-DC=example,DC=com}
-    volumes:
-      - ./.env:/app/.env
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-change-this-secret-key-in-production}
+      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
+      - JWT_EXPIRATION_HOURS=${JWT_EXPIRATION_HOURS:-24}
+      - AUDIT_LOG_PATH=${AUDIT_LOG_PATH:-logs/audit.jsonl}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
