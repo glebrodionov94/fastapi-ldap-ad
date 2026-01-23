@@ -3,6 +3,7 @@ from pydantic import BaseModel
 
 from app.core.security import JWTHandler
 from app.core.config import settings
+from app.services.ldap_service import ldap_service
 
 router = APIRouter(prefix="/auth", tags=["Аутентификация"])
 
@@ -23,19 +24,25 @@ def login(credentials: LoginRequest) -> TokenResponse:
     """
     Получить JWT токен.
 
-    Используется для получения токена доступа.
-    В реальном приложении здесь должна быть проверка против LDAP/AD.
+    Аутентификация через LDAP/AD.
     """
-    # Проверка тестовых учётных данных
-    # В реальном приложении: ldap_service.authenticate(username, password)
-    if not credentials.username or not credentials.password:
+    # Проверка учетных данных через LDAP
+    user_info = ldap_service.authenticate(credentials.username, credentials.password)
+
+    if not user_info:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
+            detail="Неверный логин или пароль",
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Создание токена с пользовательскими данными
-    token_data = {"sub": credentials.username, "username": credentials.username}
+    # Создание токена с данными пользователя
+    token_data = {
+        "sub": user_info["username"],
+        "username": user_info["username"],
+        "cn": user_info.get("cn"),
+        "mail": user_info.get("mail"),
+    }
     access_token = JWTHandler.create_token(token_data)
 
     return TokenResponse(

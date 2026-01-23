@@ -179,6 +179,53 @@ class LDAPService:
             logger.error(f"LDAP password reset error: {e}")
             raise
 
+    def authenticate(self, username: str, password: str) -> Optional[dict[str, Any]]:
+        """Authenticate user against LDAP/AD.
+
+        Returns:
+            User information dict if authentication successful, None otherwise.
+        """
+        self._check_configured()
+        try:
+            # Find user by sAMAccountName
+            search_filter = f"(&(objectClass=user)(sAMAccountName={username}))"
+            results = self.search(
+                search_filter=search_filter,
+                attributes=["distinguishedName", "sAMAccountName", "cn", "mail"],
+            )
+
+            if not results:
+                logger.warning(f"User {username} not found in LDAP")
+                return None
+
+            user_entry = results[0]
+            user_dn = user_entry.get("distinguishedName", [""])[0]
+
+            # Try to bind with user credentials
+            try:
+                test_conn = Connection(
+                    self.server,
+                    user=user_dn,
+                    password=password,
+                    auto_bind=True,
+                )
+                test_conn.unbind()
+
+                # Authentication successful, return user info
+                return {
+                    "username": user_entry.get("sAMAccountName", [""])[0],
+                    "cn": user_entry.get("cn", [""])[0],
+                    "mail": user_entry.get("mail", [None])[0],
+                    "dn": user_dn,
+                }
+            except LDAPException as e:
+                logger.warning(f"Authentication failed for user {username}: {e}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Authentication error: {e}")
+            return None
+
 
 # Singleton instance
 ldap_service = LDAPService()
