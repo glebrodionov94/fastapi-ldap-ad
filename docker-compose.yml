@@ -9,7 +9,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - LDAP_HOST=${LDAP_HOST:-ldap.example.com}
+      - LDAP_SERVER=${LDAP_SERVER:-ldap.example.com}
       - LDAP_PORT=${LDAP_PORT:-389}
       - LDAP_USE_SSL=${LDAP_USE_SSL:-false}
       - LDAP_BIND_DN=${LDAP_BIND_DN:-CN=ServiceAccount,CN=Users,DC=example,DC=com}
