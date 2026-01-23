@@ -23,6 +23,10 @@ class Settings:
     ldap_bind_password: Optional[str] = os.getenv("LDAP_BIND_PASSWORD")
     ldap_base_dn: Optional[str] = os.getenv("LDAP_BASE_DN")
 
+    # Local auth fallback
+    local_auth_username: str = os.getenv("LOCAL_AUTH_USERNAME", "admin")
+    local_auth_password: str = os.getenv("LOCAL_AUTH_PASSWORD", "admin123")
+
     # JWT Configuration
     jwt_secret_key: str = os.getenv(
         "JWT_SECRET_KEY", "your-secret-key-change-in-production"
